@@ -4,7 +4,7 @@ from pathlib import Path
 import json
 
 class Library:
-    def __init__(self, json_file="books.json"):
+    def __init__(self, json_file="need_books.json"):
         self.json_file = Path(json_file)
         self.books_titles = self._load_books()
 
@@ -38,7 +38,7 @@ class Library:
         if not formatted:
             return self.books_titles
         books_formatted = (
-            f"{i+1}. {book['title']} (билет: {book['ticket_num']}, добавлена: {book['date_added']})"
+            f"{i+1}. {book['title']} (билет: {book['ticket']}, добавлена: {book['dt']})"
             for i, book in enumerate(self.books_titles)
             )
         result = "\n".join(books_formatted)
@@ -49,6 +49,6 @@ if __name__ == "__main__": # можно и убрать, ничего пока �
     book_title = input('Введине название книги: ')
     ticket = input('Введите читательский билет: ')
     library.add_book(book_title, ticket)
+    print(library.all_books(formatted=True))
 
-    for book in library.all_books():
-        print(book)
+    
