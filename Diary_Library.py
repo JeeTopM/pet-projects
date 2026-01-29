@@ -16,6 +16,7 @@ from openpyxl import load_workbook
 # === ВСПОМОГАТЕЛЬНЫЕ ===
 # ======================
 
+
 def to_number(value) -> int:
     """Безопасно преобразует значение в число."""
     if pd.isna(value):
@@ -31,7 +32,7 @@ def read_excel(file_path: Path):
     if not file_path.exists():
         raise FileNotFoundError(f"Файл не найден: {file_path}")
 
-    workbook = load_workbook(file_path)
+    workbook = load_workbook(file_path, data_only=True)
     return workbook.active
 
 
@@ -48,8 +49,10 @@ def extract_table(ws, start_row: int):
     """Собирает данные из листа начиная со строки start_row."""
     data_rows = []
     for row_idx in range(start_row, ws.max_row + 1):
-        row_data = [ws.cell(row=row_idx, column=col).value
-                    for col in range(1, ws.max_column + 1)]
+        row_data = [
+            ws.cell(row=row_idx, column=col).value
+            for col in range(1, ws.max_column + 1)
+        ]
 
         if not any(cell is not None for cell in row_data):
             break
@@ -74,8 +77,12 @@ def parse_date(value):
 
 
 def save_report(df: pd.DataFrame, source_path: Path, suffix: str) -> Path:
-    """Сохраняет итоговый DataFrame в Excel рядом с исходным файлом."""
-    new_path = source_path.parent / f"{source_path.stem}-{suffix}{source_path.suffix}"
+    """Сохраняет итоговый DataFrame в Excel в подпапку с сегодняшней датой рядом с исходным файлом."""
+    today_folder = datetime.date.today().strftime("%Y-%m-%d")  # например 2026-01-29
+    out_dir = source_path.parent / today_folder
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    new_path = out_dir / f"{source_path.stem}-{suffix}{source_path.suffix}"
     df.to_excel(new_path, index=False)
     return new_path
 
@@ -83,9 +90,18 @@ def save_report(df: pd.DataFrame, source_path: Path, suffix: str) -> Path:
 def format_month_name(date: datetime.datetime) -> str:
     """Форматирует название месяца на русском."""
     month_names = {
-        1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
-        5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
-        9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
+        1: "Январь",
+        2: "Февраль",
+        3: "Март",
+        4: "Апрель",
+        5: "Май",
+        6: "Июнь",
+        7: "Июль",
+        8: "Август",
+        9: "Сентябрь",
+        10: "Октябрь",
+        11: "Ноябрь",
+        12: "Декабрь",
     }
     return f"{month_names[date.month]} {date.year}"
 
@@ -102,27 +118,37 @@ def create_monthly_report(data: List[Dict], week_col: str = "№ недели") 
     df = pd.DataFrame(data)
 
     # Добавляем столбцы для месяца и года
-    df['date'] = pd.to_datetime(df.get('date', pd.NaT))
-    df['month_year'] = df['date'].apply(lambda x: format_month_name(x) if pd.notna(x) else '')
-    df['month_num'] = df['date'].dt.month
-    df['year'] = df['date'].dt.year
-    df['week_num'] = df[week_col]  # Сохраняем номер недели
+    df["date"] = pd.to_datetime(df.get("date", pd.NaT))
+    df["month_year"] = df["date"].apply(
+        lambda x: format_month_name(x) if pd.notna(x) else ""
+    )
+    df["month_num"] = df["date"].dt.month
+    df["year"] = df["date"].dt.year
+    df["week_num"] = df[week_col]  # Сохраняем номер недели
 
     # Группируем по месяцу и неделе, суммируя все числовые колонки
-    numeric_cols = [col for col in df.columns if col not in ['date', 'month_year', 'month_num', 'year', week_col, 'week_num']]
+    numeric_cols = [
+        col
+        for col in df.columns
+        if col not in ["date", "month_year", "month_num", "year", week_col, "week_num"]
+    ]
 
     # Суммируем данные по неделям в пределах каждого месяца
-    grouped = df.groupby(['year', 'month_num', 'month_year', 'week_num'])[numeric_cols].sum().reset_index()
+    grouped = (
+        df.groupby(["year", "month_num", "month_year", "week_num"])[numeric_cols]
+        .sum()
+        .reset_index()
+    )
 
     # Сортируем по дате
-    grouped = grouped.sort_values(['year', 'month_num', 'week_num'])
+    grouped = grouped.sort_values(["year", "month_num", "week_num"])
 
     result_rows = []
     month_totals = {}
     current_month = None
 
     for _, row in grouped.iterrows():
-        month_name = row['month_year']
+        month_name = row["month_year"]
 
         # Если начался новый месяц, добавляем заголовок месяца
         if month_name != current_month:
@@ -170,7 +196,8 @@ def create_monthly_report(data: List[Dict], week_col: str = "№ недели") 
 # === ОТЧЕТ 1. ПОЛЬЗОВАТЕЛИ ===
 # ======================
 
-def process_report_1(file_path: Path) -> Path | None:
+
+def process_report_1(file_path: Path) -> Path:
     """1. Дневник библиотеки. Часть 1.1 — Пользователи."""
     ws = read_excel(file_path)
     header_row_idx = find_header(ws, "Дата")
@@ -180,12 +207,18 @@ def process_report_1(file_path: Path) -> Path | None:
 
     data_rows = extract_table(ws, header_row_idx)
 
-    header_row = next((i for i, row in enumerate(data_rows)
-                       if len(row) > 2 and row[1] == 'Дата' and row[2] == 'Всего читателей'), None)
+    header_row = next(
+        (
+            i
+            for i, row in enumerate(data_rows)
+            if len(row) > 2 and row[1] == "Дата" and row[2] == "Всего читателей"
+        ),
+        None,
+    )
     if header_row is None:
         raise ValueError("Не найдена строка с заголовками данных!")
 
-    df = pd.DataFrame(data_rows[header_row + 1:], columns=data_rows[header_row])
+    df = pd.DataFrame(data_rows[header_row + 1 :], columns=data_rows[header_row])
 
     temp_data = []
     for _, row in df.iterrows():
@@ -194,17 +227,19 @@ def process_report_1(file_path: Path) -> Path | None:
             continue
 
         week = date_val.isocalendar()[1]
-        temp_data.append({
-            "date": date_val,
-            "№ недели": week,
-            "0-6": to_number(row.iloc[7]),
-            "7-9": to_number(row.iloc[8]),
-            "10-14": to_number(row.iloc[9]),
-            "15-17": to_number(row.iloc[10]),
-            "18-35": to_number(row.iloc[11]),
-            "36-55": to_number(row.iloc[13]),
-            "56 и старше": to_number(row.iloc[14]),
-        })
+        temp_data.append(
+            {
+                "date": date_val,
+                "№ недели": week,
+                "0-6": to_number(row.iloc[7]),
+                "7-9": to_number(row.iloc[8]),
+                "10-14": to_number(row.iloc[9]),
+                "15-17": to_number(row.iloc[10]),
+                "18-35": to_number(row.iloc[11]),
+                "36-55": to_number(row.iloc[13]),
+                "56 и старше": to_number(row.iloc[14]),
+            }
+        )
 
     if not temp_data:
         raise ValueError("Нет данных для обработки.")
@@ -217,7 +252,8 @@ def process_report_1(file_path: Path) -> Path | None:
 # === ОТЧЕТ 2. ЗАПИСЬ ЧИТАТЕЛЕЙ ===
 # ======================
 
-def process_report_2(file_path: Path) -> Path | None:
+
+def process_report_2(file_path: Path) -> Path:
     """2. Статистика записи читателей по округу/библиотеке."""
     ws = read_excel(file_path)
     header_row_idx = find_header(ws, "Пункт книговыдачи / период")
@@ -235,11 +271,13 @@ def process_report_2(file_path: Path) -> Path | None:
             continue
 
         week = date.isocalendar()[1]
-        temp_data.append({
-            "date": date,
-            "№ недели": week,
-            "Договоры": to_number(row[2]),
-        })
+        temp_data.append(
+            {
+                "date": date,
+                "№ недели": week,
+                "Договоры": to_number(row[2]),
+            }
+        )
 
     if not temp_data:
         raise ValueError("Нет данных для обработки.")
@@ -252,7 +290,8 @@ def process_report_2(file_path: Path) -> Path | None:
 # === ОТЧЕТ 3. ПОСЕЩЕНИЯ ===
 # ======================
 
-def process_report_3(file_path: Path) -> Path | None:
+
+def process_report_3(file_path: Path) -> Path:
     """3. Дневник библиотеки. Часть 1.2 — Посещения."""
     ws = read_excel(file_path)
     header_row_idx = find_header(ws, "Дата")
@@ -261,12 +300,16 @@ def process_report_3(file_path: Path) -> Path | None:
         raise ValueError("Не найден заголовок 'Дата'")
 
     data_rows = extract_table(ws, header_row_idx)
-    data_start_row = next((i for i, row in enumerate(data_rows)
-                           if len(row) > 1 and row[1] == "Дата"), None)
+    data_start_row = next(
+        (i for i, row in enumerate(data_rows) if len(row) > 1 and row[1] == "Дата"),
+        None,
+    )
     if data_start_row is None:
         raise ValueError("Не найдена строка с заголовками данных.")
 
-    df = pd.DataFrame(data_rows[data_start_row + 1:], columns=data_rows[data_start_row])
+    df = pd.DataFrame(
+        data_rows[data_start_row + 1 :], columns=data_rows[data_start_row]
+    )
     temp_data = []
 
     for _, row in df.iterrows():
@@ -275,19 +318,23 @@ def process_report_3(file_path: Path) -> Path | None:
             continue
 
         week = date_val.isocalendar()[1]
-        temp_data.append({
-            "date": date_val,
-            "№ недели": week,
-            "Посещения": to_number(row.iloc[4]) + to_number(row.iloc[7]) +
-                         to_number(row.iloc[9]) + to_number(row.iloc[13]),
-            "КДФ": to_number(row.iloc[12]),
-            "Почта": to_number(row.iloc[21]),
-            "Телефон": to_number(row.iloc[20]),
-            "В стационарных условиях": to_number(row.iloc[16]),
-            "Справки 1": to_number(row.iloc[17]),
-            "Справки 2": to_number(row.iloc[18]),
-            "Справки 3": to_number(row.iloc[19]),
-        })
+        temp_data.append(
+            {
+                "date": date_val,
+                "№ недели": week,
+                "Посещения": to_number(row.iloc[4])
+                + to_number(row.iloc[7])
+                + to_number(row.iloc[9])
+                + to_number(row.iloc[13]),
+                "КДФ": to_number(row.iloc[12]),
+                "Почта": to_number(row.iloc[21]),
+                "Телефон": to_number(row.iloc[20]),
+                "В стационарных условиях": to_number(row.iloc[16]),
+                "Справки 1": to_number(row.iloc[17]),
+                "Справки 2": to_number(row.iloc[18]),
+                "Справки 3": to_number(row.iloc[19]),
+            }
+        )
 
     if not temp_data:
         raise ValueError("Нет данных для обработки.")
@@ -300,23 +347,28 @@ def process_report_3(file_path: Path) -> Path | None:
 # === ОТЧЕТ 4. КНИГОВЫДАЧА ===
 # ======================
 
-def process_report_4(file_path: Path) -> Path | None:
+
+def process_report_4(file_path: Path) -> Path:
     """4. Дневник библиотеки — статистика книговыдачи."""
     ws = read_excel(file_path)
-    header_row_idx = find_header(ws, "Пункт книговыдачи")
 
-    if not header_row_idx:
-        raise ValueError("Не найден заголовок 'Пункт книговыдачи / период'")
-
-    # data_start = next((r for r, row in enumerate(ws.iter_rows(values_only=True), 1) if row[1] and isinstance(row[1], str) and "2026-" in row[1]), None)
-
-    data_start = next((r for r, row in enumerate(ws.iter_rows(values_only=True), 1)
-                    if row[1] and isinstance(row[1], str)
-                    and re.search(r'\b\d{4}-', row[1])), None)
-
+    data_start = next(
+        (
+            r
+            for r, row in enumerate(ws.iter_rows(values_only=True), 1)
+            if row
+            and len(row) > 1
+            and row[1]
+            and isinstance(row[1], str)
+            and re.search(r"\b\d{4}-", row[1])
+        ),
+        None,
+    )
 
     if not data_start:
-        raise ValueError("Не найдено начало таблицы с данными.")
+        raise ValueError(
+            "Не найдено начало таблицы с датами (ожидаю формат вроде 'YYYY-...')."
+        )
 
     data_rows = extract_table(ws, data_start)
     temp_data = []
@@ -334,14 +386,16 @@ def process_report_4(file_path: Path) -> Path | None:
         children_2 = sum(to_number(row[i]) for i in [8])
         youth = sum(to_number(row[i]) for i in [9])
 
-        temp_data.append({
-            "date": date_val,
-            "№ недели": week,
-            "Всего": to_number(row[2]),
-            "Детям до 14 лет вкл.": children_1,
-            "Подростки 15-17 лет": children_2,
-            "Молодежь 18-35 лет": youth
-        })
+        temp_data.append(
+            {
+                "date": date_val,
+                "№ недели": week,
+                "Всего": to_number(row[2]),
+                "Детям до 14 лет вкл.": children_1,
+                "Подростки 15-17 лет": children_2,
+                "Молодежь 18-35 лет": youth,
+            }
+        )
 
     if not temp_data:
         raise ValueError("Нет данных для обработки.")
@@ -354,6 +408,7 @@ def process_report_4(file_path: Path) -> Path | None:
 # === GUI ПРИЛОЖЕНИЕ ===
 # ======================
 
+
 class LibraryReportApp:
     def __init__(self, root):
         self.root = root
@@ -362,7 +417,7 @@ class LibraryReportApp:
 
         # Установка иконки (если есть)
         try:
-            if getattr(sys, 'frozen', False):
+            if getattr(sys, "frozen", False):
                 # Если запущен как EXE
                 base_path = sys._MEIPASS
             else:
@@ -386,14 +441,12 @@ class LibraryReportApp:
         title_label = ttk.Label(
             title_frame,
             text="📚 Обработчик отчетов библиотеки",
-            font=("Arial", 16, "bold")
+            font=("Arial", 16, "bold"),
         )
         title_label.pack()
 
         subtitle_label = ttk.Label(
-            title_frame,
-            text="С группировкой данных по месяцам",
-            font=("Arial", 10)
+            title_frame, text="С группировкой данных по месяцам", font=("Arial", 10)
         )
         subtitle_label.pack()
 
@@ -402,22 +455,22 @@ class LibraryReportApp:
         main_frame.pack(fill="both", expand=True)
 
         # Выбор файла
-        file_frame = ttk.LabelFrame(main_frame, text="Выберите файл отчета", padding="10")
+        file_frame = ttk.LabelFrame(
+            main_frame, text="Выберите файл отчета", padding="10"
+        )
         file_frame.pack(fill="x", pady=(0, 10))
 
         self.file_path_var = tk.StringVar()
         file_entry = ttk.Entry(file_frame, textvariable=self.file_path_var, width=60)
         file_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
-        browse_btn = ttk.Button(
-            file_frame,
-            text="Обзор...",
-            command=self.browse_file
-        )
+        browse_btn = ttk.Button(file_frame, text="Обзор...", command=self.browse_file)
         browse_btn.pack(side="right")
 
         # Выбор типа отчета
-        report_frame = ttk.LabelFrame(main_frame, text="Выберите тип отчета", padding="10")
+        report_frame = ttk.LabelFrame(
+            main_frame, text="Выберите тип отчета", padding="10"
+        )
         report_frame.pack(fill="x", pady=(0, 10))
 
         self.report_type = tk.IntVar(value=1)
@@ -426,20 +479,19 @@ class LibraryReportApp:
             ("1. Дневник библиотеки. Часть 1.1 – Пользователи", 1),
             ("2. Статистика записи читателей по округу/библиотеке", 2),
             ("3. Дневник библиотеки. Часть 1.2 – Посещения", 3),
-            ("4. Дневник библиотеки – статистика книговыдачи", 4)
+            ("4. Дневник библиотеки – статистика книговыдачи", 4),
         ]
 
         for text, value in reports:
             radio = ttk.Radiobutton(
-                report_frame,
-                text=text,
-                variable=self.report_type,
-                value=value
+                report_frame, text=text, variable=self.report_type, value=value
             )
             radio.pack(anchor="w", pady=2)
 
         # Описание формата
-        desc_frame = ttk.LabelFrame(main_frame, text="Формат выходного отчета", padding="10")
+        desc_frame = ttk.LabelFrame(
+            main_frame, text="Формат выходного отчета", padding="10"
+        )
         desc_frame.pack(fill="x", pady=(0, 10))
 
         desc_text = """
@@ -462,7 +514,7 @@ class LibraryReportApp:
             button_frame,
             text="Обработать отчет",
             command=self.process_report,
-            style="Accent.TButton"
+            style="Accent.TButton",
         )
         self.process_btn.pack(side="left", padx=(0, 10))
 
@@ -470,7 +522,7 @@ class LibraryReportApp:
             button_frame,
             text="Открыть папку с файлами",
             command=self.open_folder,
-            state="disabled"
+            state="disabled",
         )
         self.open_folder_btn.pack(side="left")
 
@@ -479,10 +531,7 @@ class LibraryReportApp:
         log_frame.pack(fill="both", expand=True, pady=(10, 0))
 
         self.log_text = scrolledtext.ScrolledText(
-            log_frame,
-            height=10,
-            wrap=tk.WORD,
-            font=("Courier New", 9)
+            log_frame, height=10, wrap=tk.WORD, font=("Courier New", 9)
         )
         self.log_text.pack(fill="both", expand=True)
 
@@ -493,7 +542,7 @@ class LibraryReportApp:
             textvariable=self.status_var,
             relief=tk.SUNKEN,
             anchor=tk.W,
-            padding=(10, 5)
+            padding=(10, 5),
         )
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
@@ -502,14 +551,10 @@ class LibraryReportApp:
         style.configure("Accent.TButton", font=("Arial", 10, "bold"))
 
     def browse_file(self):
-        filetypes = (
-            ("Excel files", "*.xlsx *.xls"),
-            ("All files", "*.*")
-        )
+        filetypes = (("Excel files", "*.xlsx *.xls"), ("All files", "*.*"))
 
         filename = filedialog.askopenfilename(
-            title="Выберите файл отчета",
-            filetypes=filetypes
+            title="Выберите файл отчета", filetypes=filetypes
         )
 
         if filename:
@@ -550,9 +595,7 @@ class LibraryReportApp:
 
         # Запускаем в отдельном потоке
         thread = threading.Thread(
-            target=self.run_processor,
-            args=(processor, report_name),
-            daemon=True
+            target=self.run_processor, args=(processor, report_name), daemon=True
         )
         thread.start()
 
@@ -581,7 +624,7 @@ class LibraryReportApp:
         messagebox.showinfo(
             "Успешно!",
             f"Отчет '{report_name}' успешно обработан!\n\n"
-            f"Файл сохранен как:\n{result_path.name}"
+            f"Файл сохранен как:\n{result_path.name}",
         )
 
     def on_processing_error(self, error_msg: str):
@@ -593,13 +636,13 @@ class LibraryReportApp:
 
         messagebox.showerror(
             "Ошибка обработки",
-            "Произошла ошибка при обработке файла.\n"
-            "Подробности смотрите в логе."
+            "Произошла ошибка при обработке файла.\n" "Подробности смотрите в логе.",
         )
 
     def open_folder(self):
         if self.file_path and self.file_path.exists():
             import subprocess
+
             folder_path = str(self.file_path.parent)
 
             try:
@@ -618,6 +661,7 @@ class LibraryReportApp:
 # ======================
 # === ТОЧКА ВХОДА ===
 # ======================
+
 
 def main():
     root = tk.Tk()
